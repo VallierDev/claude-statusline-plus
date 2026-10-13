@@ -25,6 +25,10 @@ Illustrative data; percentages above are not a real account's usage.
 | `cache` | Prompt-cache countdown when Claude Code supplies expiry data |
 | `last` | Time since a main-session assistant response carrying API usage; tool results do not reset it |
 
+## Live reminders without restarting (explicit opt-in)
+
+Run `python3 service/install-live-hook.py` to add command-only PreToolUse/PostToolUse hooks. Existing hooks are preserved and settings are backed up. Claude Code normally watches settings changes, so running sessions can receive quota context at their next tool boundary. The hook checks at most once per minute and emits a compact reminder every ten minutes or on advice transitions (normal/conserve/stop/unknown). It never starts a model timer, blocks a tool, changes permissions, restarts sessions or forces automatic resume. Idle sessions receive it when they next use a tool. Local receipts in `~/.cache/claude-quota/hook` confirm hook execution, not compliance with advice. Remove only the entries pointing at `quota-hook.py` to disable; do not restore the entire settings backup over later changes.
+
 ## Quota command and local reader service (1.1.0)
 
 `/pace-statusline-plus:quota` uses Claude Code’s `${CLAUDE_SESSION_ID}` substitution to run one compact local query for its own session and replies in at most two short sentences. From this checkout, install the Linux systemd user service or macOS LaunchAgent and the exact local plugin:
@@ -139,7 +143,7 @@ bash -n claude-pace.sh
 test_home=$(mktemp -d)
 HOME="$test_home" XDG_RUNTIME_DIR="" bash test.sh
 python3 -m unittest discover -s tests -v
-python3 -m unittest discover -s service -p "test_quota.py" -v
+python3 -m unittest discover -s service -p "test_*.py" -v
 ```
 
 Inherited regression tests additionally use Perl. CI runs the suites on macOS and Linux. The added tests cover quota/cache separation, activity timestamps, missing fields, malformed input, and preservation of unrelated installer settings.

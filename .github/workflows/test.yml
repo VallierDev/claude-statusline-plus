@@ -21,4 +21,4 @@ jobs:
           test_home=$(mktemp -d)
           HOME="$test_home" XDG_RUNTIME_DIR="" bash test.sh
           python3 -m unittest discover -s tests -v
-          python3 -m unittest discover -s service -p "test_quota.py" -v
+          python3 -m unittest discover -s service -p "test_*.py" -v

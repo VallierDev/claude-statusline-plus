@@ -74,6 +74,10 @@ chmod +x ~/.claude/claude-statusline-plus.sh
 
 安装后打开一个新的 Claude Code 会话。
 
+## 当前会话热加载（明确选择开启）
+
+运行 `python3 service/install-live-hook.py`，增加命令型 PreToolUse/PostToolUse hook，备份配置并保留现有 hooks。Claude Code 通常会自动读取 settings 变更，使正在运行的会话在下一次工具调用边界收到额度简报。最多每分钟本地检查一次，每十分钟或建议档位改变才送入模型上下文。不会定时唤醒模型、阻止工具、修改权限、重启会话或自动恢复任务；空闲会话在下次调用工具时接收。`~/.cache/claude-quota/hook` 中回执只能证明 hook 执行，不能证明 Claude 完全遵守建议。关闭时只删除 command 指向 `quota-hook.py` 的条目，不要整份恢复旧配置覆盖后续改动。
+
 ## Claude 自查额度命令与本机服务（1.1.0）
 
 新增 `/pace-statusline-plus:quota`：通过 Claude Code 的 `${CLAUDE_SESSION_ID}` 替换准确读取自己的会话额度，最多回复两句。终端也可以直接运行：
@@ -149,7 +153,7 @@ bash -n claude-pace.sh
 test_home=$(mktemp -d)
 HOME="$test_home" XDG_RUNTIME_DIR="" bash test.sh
 python3 -m unittest discover -s tests -v
-python3 -m unittest discover -s service -p "test_quota.py" -v
+python3 -m unittest discover -s service -p "test_*.py" -v
 ```
 
 上游回归测试额外需要 Perl。CI 在 macOS 与 Linux 运行；新增测试覆盖缓存与额度独立显示、模型活动计时、字段缺失、异常输入，以及安装器保留其他配置。
