@@ -1,0 +1,7 @@
+Claude Statusline Plus derives from Astro-Han/claude-pace.
+Upstream: https://github.com/Astro-Han/claude-pace
+Upstream baseline: 7fe9fa8570b0f11f6e254700083c2b152ce3cc34
+Original copyright and MIT license are retained in LICENSE.
+Enhancements: prompt-cache expiry countdown, last model activity,
+input validation, installation tooling and bilingual documentation.
+Not affiliated with or endorsed by Anthropic.

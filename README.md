@@ -1,158 +1,113 @@
-# Claude Pace
+# Claude Statusline Plus
 
-A lightweight Claude Code status line and rate limit tracker that shows your 5-hour and 7-day quota usage in real time. Pure Bash + jq, single file, zero npm.
+A two-line Claude Code statusline with quota pace, context usage, prompt-cache expiry and time since the last model response.
 
-If you are searching for a Claude Code statusline, a Claude Code quota monitor, or a Claude Code usage tracker, claude-pace is built for that narrow job. It shows not only how much quota you have used, but whether your current burn rate is sustainable before the window resets.
+[简体中文](README.zh-CN.md) · [Upstream](https://github.com/Astro-Han/claude-pace) · [MIT license](LICENSE)
 
-![claude-pace statusline demo](.github/claude-pace-demo.gif)
+An enhanced fork of **Astro-Han/claude-pace**, with the original author and license retained. The additional cache and activity indicators come from a version used on macOS and Ubuntu. This project is not affiliated with Anthropic.
 
-## TL;DR
-
-- Claude Code status line with `5h` and `7d` quota usage, reset countdowns, and pace delta
-- Pace-aware rate limit tracking, `⇡15%` means overspending, `⇣15%` means headroom
-- Pure Bash + jq, single file, no Node.js runtime and no lockfile churn
-- Install as a Claude Code plugin, with `npx`, or as a single script
-
-Most statuslines show "you used 60%." That number means nothing without context. 60% with 30 minutes left? Fine, the window resets soon. 60% with 4 hours left? You are about to hit the wall. claude-pace compares your burn rate to the time remaining and shows the delta.
-
-- **⇣15%** green = you've used 15% less than expected. Headroom. Keep going.
-- **⇡15%** red = you're burning 15% faster than sustainable. Slow down.
-- **15%** / **20%** = used in the 5h and 7d windows. **3h** = resets in 3 hours.
-- Top line: model, effort, project `(branch)`, `3f +24 -7` = git diff stats
-
-Claude Code supports custom status lines through its `statusLine` setting and `/statusline` workflow in the official docs:
-
-- [Customize your status line](https://code.claude.com/docs/en/statusline)
-- [Claude Code settings](https://docs.anthropic.com/en/docs/claude-code/settings)
-
-## Table of Contents
-
-- [Install This Claude Code Statusline](#install-this-claude-code-statusline)
-- [Upgrade](#upgrade)
-- [Claude Code Statusline Comparison](#claude-code-statusline-comparison)
-- [How Claude Pace Tracks Quota](#how-claude-pace-tracks-quota)
-- [Claude Code Statusline FAQ](#claude-code-statusline-faq)
-
-## Install This Claude Code Statusline
-
-Requires `jq`.
-
-**Plugin (recommended):**
-
-Inside Claude Code:
-
-```
-/plugin marketplace add Astro-Han/claude-pace
-/plugin install claude-pace
-/reload-plugins
-/claude-pace:setup
+```text
+Opus (200K) high    | my-project (main) 2f +12 -3
+██░░░░░░░░ 20% 200K | 5h 25% ⇡5% 4h 0m  7d 40% ⇡12% 5d 0h  cache 2m  last 10m
 ```
 
-**npx:**
+Illustrative data; percentages above are not a real account's usage.
+
+## What it shows
+
+| Indicator | Meaning |
+| --- | --- |
+| Model, context capacity, effort | Current Claude Code session configuration |
+| Context bar | Context-window occupancy, separate from subscription quota |
+| `5h` / `7d` | Used percentage, time until reset, and reset clock in your local timezone |
+| `⇡` / `⇣` | Usage ahead of / behind the proportion of the window that has elapsed; a pace indicator, not a forecast |
+| Git branch and changes | Working-tree identity, changed files and added/deleted lines |
+| `cache` | Prompt-cache countdown when Claude Code supplies expiry data |
+| `last` | Time since a main-session assistant response carrying API usage; tool results do not reset it |
+
+## Install
+
+Runtime: **Bash 3.2+**, **jq** and standard Unix utilities. Git is needed for the optional Git segment. macOS and Linux are the supported targets; Windows Git Bash has inherited path normalization but is not verified by this fork's CI.
+
+Install jq if needed:
 
 ```bash
-npx claude-pace
+# macOS
+brew install jq
+# Ubuntu / Debian
+sudo apt-get install jq
 ```
 
-Restart Claude Code. Done.
+### Settings-preserving installer
 
-**Manual:**
+The installer additionally needs Python 3.8+.
+
+```bash
+git clone https://github.com/VallierDev/claude-statusline-plus.git
+cd claude-statusline-plus
+python3 install.py
+```
+
+It installs `~/.claude/claude-statusline-plus.sh`, backs up your previous settings, and updates **only `statusLine`**. It does not change your model, permissions, account or other plugins. A 60-second refresh keeps countdowns moving between responses.
+
+### Manual install
 
 ```bash
 mkdir -p ~/.claude
-curl -fsSL -o ~/.claude/statusline.sh.new \
-  https://github.com/Astro-Han/claude-pace/releases/latest/download/claude-pace.sh
-mv ~/.claude/statusline.sh.new ~/.claude/statusline.sh
-chmod +x ~/.claude/statusline.sh
+cp claude-pace.sh ~/.claude/claude-statusline-plus.sh
+chmod +x ~/.claude/claude-statusline-plus.sh
 ```
 
-This installs the latest release, not the current state of `main`. To pin an exact
-version, swap `latest/download` for `download/vX.Y.Z` with a tag from
-[Releases](https://github.com/Astro-Han/claude-pace/releases).
-
-Add to `~/.claude/settings.json`:
+Merge this key into `~/.claude/settings.json`; do not replace the entire file:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/statusline.sh"
+    "command": "~/.claude/claude-statusline-plus.sh",
+    "refreshInterval": 60
   }
 }
 ```
 
-Restart Claude Code. Done.
+### Claude Code plugin
 
-To remove: delete the `statusLine` block from `~/.claude/settings.json`.
+```text
+/plugin marketplace add VallierDev/claude-statusline-plus
+/plugin install pace-statusline-plus@pace-statusline-plus-marketplace
+/pace-statusline-plus:setup
+```
 
-## Upgrade
+The setup command installs the bundled script and updates only the statusline setting. Start a new session after installation.
 
-- **Plugin:**
+## Quota and cache availability
 
-  ```
-  /plugin marketplace update claude-pace-marketplace
-  /plugin update claude-pace
-  /reload-plugins
-  /claude-pace:setup
-  ```
+Claude Code supplies quota data in `rate_limits` on stdin. According to the [official statusline documentation](https://code.claude.com/docs/en/statusline), this data is available for Pro/Max accounts and some gateway configurations, and only after the first API response; individual windows can be absent. A fresh or unsupported session therefore shows `--`, rather than a stale quota snapshot.
 
-- **npx:** `npx claude-pace@latest`
-- **Manual:** Re-run the `curl` command above.
+The cache countdown uses `prompt_cache.expires_at` supplied by Claude Code. An absent field is not treated as a guessed cache hit or a five-minute timer. `last` is an activity indicator, **not proof that a prompt cache remains valid**. Use a recent Claude Code version; the fork's added fields were verified with 2.1.296. Older versions degrade gracefully when fields are missing.
 
-Every channel installs a tagged release. `/claude-pace:setup` copies the script the
-plugin ships rather than downloading one, so the plugin version you have is the
-version you run. Nothing installs from `main`.
+## Privacy and local files
 
-Release notifications: Watch this repo → Custom → Releases.
+The runtime script makes **no network requests** and reads **no authentication credentials**. It reads session JSON on stdin and local settings. When a session ID is supplied, it reads at most the last 400 lines of that session's local JSONL record to select the latest assistant-usage timestamp; it does not print conversation contents. Git metadata is cached briefly in a user-owned `claude-pace` directory under `$XDG_RUNTIME_DIR` or `~/.cache`.
 
-## Claude Code Statusline Comparison
+Installation backups are stored locally under `~/.claude/backups/claude-statusline-plus` with restricted permissions. Settings backups can contain your own private settings: do not publish them. This repository contains only source, documentation and synthetic tests.
 
-|  | claude-pace | [claude-hud](https://github.com/jarrodwatts/claude-hud) | [CCometixLine](https://github.com/Haleclipse/CCometixLine) | [ccstatusline](https://github.com/sirmalloc/ccstatusline) |
-|---|---|---|---|---|
-| Runtime | `jq` | Node.js 18+ / npm | Compiled (Rust) | Node.js / npm |
-| Codebase | Single Bash file | 1000+ lines + node_modules | Compiled binary | 1000+ lines + node_modules |
-| Rate limit tracking | 5h + 7d usage %, pace delta, reset countdown | Usage % | Usage % (planned) | None (formatting only) |
-| Execution | ~10ms | ~90ms | ~5ms | ~90ms |
-| Memory | ~2 MB | ~57 MB | ~3 MB | ~57 MB |
+## Remove or restore
 
-Execution and memory measured on Apple Silicon, 300 runs, same stdin JSON.
+Remove the `statusLine` key to disable the statusline, or restore **just that key** from the backup path printed by the installer. `previous-statusline.json` records whether the key existed and its old value. Restoring an entire settings backup also reverts settings you changed later, so use a selective restore when appropriate. You can then delete `~/.claude/claude-statusline-plus.sh`.
 
-Need themes, powerline aesthetics, or TUI config? Try [ccstatusline](https://github.com/sirmalloc/ccstatusline). The entire source of claude-pace is [one file](claude-pace.sh). Read it.
+## Development
 
-## How Claude Pace Tracks Quota
+```bash
+bash -n claude-pace.sh
+# Isolate HOME so tests never touch your Claude configuration.
+test_home=$(mktemp -d)
+HOME="$test_home" XDG_RUNTIME_DIR="" bash test.sh
+python3 -m unittest discover -s tests -v
+```
 
-Claude Code polls the statusline every ~300ms:
+Inherited regression tests additionally use Perl. CI runs the suites on macOS and Linux. The added tests cover quota/cache separation, activity timestamps, missing fields, malformed input, and preservation of unrelated installer settings.
 
-| Data | Source | Cache |
-|------|--------|-------|
-| Model, context, cost | stdin JSON (single `jq` call) | None needed |
-| Quota (5h, 7d, pace) | stdin `rate_limits` (live, no fallback) | None |
-| Git branch + diff | `git` commands | Private cache dir, 5s TTL |
+## Credits and license
 
-Requires Claude Code `2.1.80+`, where `rate_limits` is available in statusline stdin. When stdin omits `rate_limits` (older Claude Code, or providers that do not surface the field), claude-pace shows `--` for 5h/7d quota and the session cost if available. No cached or stale quota is ever shown, because a cached account-level snapshot cannot be proven to belong to the current provider/account.
-
-Git cache files live in a private per-user directory (`$XDG_RUNTIME_DIR/claude-pace` or `~/.cache/claude-pace`, mode 700). All cache reads are validated before use. No files are ever written to shared `/tmp`.
-
-## Claude Code Statusline FAQ
-
-**Does it need Node.js?**
-No. Only `jq` (available via `brew install jq` or your package manager). No npm, no node_modules, no lock files.
-
-**How does pace tracking work?**
-claude-pace compares your current usage percentage to the fraction of time elapsed in each window (5-hour and 7-day). If you've used 40% of your quota but only 30% of the time has passed, the pace delta shows ⇡10% (red, burning too fast). If you've used 30% with 40% of time elapsed, it shows ⇣10% (green, headroom).
-
-**Does it make network calls?**
-No. Quota data comes from stdin `rate_limits` on Claude Code `2.1.80+`. If `rate_limits` is absent (older Claude Code, or providers that omit it), claude-pace shows `--` for 5h/7d and the local session cost when present. No stale quota fallback — see [the removal decision](docs/decisions/2026-05-20-quota-cache-removal.md).
-
-**Can I inspect the source?**
-The entire tool is [one Bash file](claude-pace.sh). Read it before you install it.
-
-## Also by the Author
-
-[**diffpane**](https://github.com/Astro-Han/diffpane) - Real-time TUI diff viewer for AI coding agents. See what Claude Code changes as it happens.
-
-## License
-
-MIT
-
-*Last updated: 2026-09-25 · v0.9.5*
+The quota pace renderer, context handling, Git display and cache protections originate in [Astro-Han/claude-pace](https://github.com/Astro-Han/claude-pace). This fork adds cache/activity indicators, defensive input handling, installer tooling and bilingual docs. See [NOTICE](NOTICE), [LICENSE](LICENSE) and [CHANGELOG](CHANGELOG.md).

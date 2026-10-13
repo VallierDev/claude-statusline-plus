@@ -1,0 +1,23 @@
+name: Tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null; then
+            if [ "$(uname)" = Darwin ]; then brew install jq; else sudo apt-get update && sudo apt-get install -y jq; fi
+          fi
+      - name: Test syntax and behavior
+        run: |
+          bash -n claude-pace.sh
+          test_home=$(mktemp -d)
+          HOME="$test_home" XDG_RUNTIME_DIR="" bash test.sh
+          python3 -m unittest discover -s tests -v

@@ -1,29 +1,22 @@
 {
-  "name": "claude-pace",
-  "description": "Claude Code statusline and quota tracker. Single Bash + jq file, no Node.js, no npm, with pace-aware rate limit tracking.",
-  "version": "0.9.5",
+  "name": "pace-statusline-plus",
+  "description": "Claude Code quota pace, context, prompt-cache countdown and last model activity. Bash + jq.",
+  "version": "1.0.0",
   "author": {
-    "name": "yuhan",
-    "url": "https://github.com/Astro-Han"
+    "name": "VallierDev",
+    "url": "https://github.com/VallierDev"
   },
   "commands": [
     "./commands/setup.md"
   ],
-  "homepage": "https://github.com/Astro-Han/claude-pace",
-  "repository": "https://github.com/Astro-Han/claude-pace",
+  "homepage": "https://github.com/VallierDev/claude-statusline-plus",
+  "repository": "https://github.com/VallierDev/claude-statusline-plus",
   "license": "MIT",
   "keywords": [
     "claude-code",
-    "claude-code-statusline",
     "statusline",
-    "status-line",
-    "monitoring",
     "quota",
-    "quota-tracker",
-    "usage",
-    "usage-monitor",
-    "rate-limit-tracker",
-    "pace",
+    "cache",
     "bash"
   ]
 }

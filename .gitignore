@@ -1,1 +1,7 @@
+__pycache__/
+*.pyc
 .DS_Store
+.env
+.credentials.json
+settings.json
+*.jsonl

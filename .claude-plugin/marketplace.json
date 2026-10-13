@@ -1,28 +1,28 @@
 {
-  "name": "claude-pace-marketplace",
+  "name": "pace-statusline-plus-marketplace",
   "owner": {
-    "name": "yuhan",
-    "email": "lei.yuhan@outlook.com"
+    "name": "VallierDev"
   },
   "metadata": {
-    "description": "Claude Pace statusline plugin marketplace",
-    "version": "0.9.5"
+    "description": "Claude Statusline Plus marketplace",
+    "version": "1.0.0"
   },
   "plugins": [
     {
-      "name": "claude-pace",
+      "name": "pace-statusline-plus",
       "source": {
         "source": "github",
-        "repo": "Astro-Han/claude-pace",
-        "ref": "v0.9.5"
+        "repo": "VallierDev/claude-statusline-plus",
+        "ref": "v1.0.0"
       },
-      "description": "Lightweight statusline with quota pace tracking. Pure Bash + jq.",
+      "description": "Claude Code quota pace, context, prompt-cache countdown and last model activity. Bash + jq.",
       "category": "monitoring",
       "tags": [
+        "claude-code",
         "statusline",
         "quota",
-        "usage",
-        "pace-tracking"
+        "cache",
+        "bash"
       ]
     }
   ]

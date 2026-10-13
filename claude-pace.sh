@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Claude Code statusline plugin
+# Claude Statusline Plus — enhanced fork of Astro-Han/claude-pace
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Astro-Han; enhancements Copyright (c) 2026 VallierDev
 # Line1: model (ctx) effort | project (branch) Nf +A -D
-# Line2: bar PCT% CL | 5h used% [⇡⇣pace] countdown  7d used% [⇡⇣pace] countdown
+# Line2: bar PCT% CL | quota countdowns | cache TTL | last model activity
 
 # Disable glob expansion so unquoted vars with wildcards (e.g. DIR paths)
 # are never accidentally expanded into filename lists.
@@ -15,6 +17,12 @@ command -v jq >/dev/null || {
   echo "Claude [needs jq]"
   exit 0
 }
+
+# Fail gently when the host sends malformed/non-object session data.
+if ! jq -e 'type == "object"' >/dev/null 2>&1 <<<"$input"; then
+  printf 'Claude [invalid session data]\n'
+  exit 0
+fi
 
 # ── Colors & Utilities ──
 # C=Cyan G=Green Y=Yellow R=Red D=Dim N=Normal (reset)
@@ -108,16 +116,17 @@ done
 _stale() { [ ! -f "$1" ] || [ $((NOW - $(stat -f%m "$1" 2>/dev/null || stat -c%Y "$1" 2>/dev/null || echo 0))) -gt "$2" ]; }
 
 # ── Parse stdin + settings in one jq call ──
-# Fields: MODEL DIR PCT CTX COST EFF HAS_RL U5 U7 R5 R7 TIN
+# Fields: MODEL DIR PCT CTX COST EFF HAS_RL U5 U7 R5 R7 TIN SID
+#         CACHE_WARM CACHE_SEEN CACHE_EXP CACHE_TTL
 # Read settings into a shell var rather than process substitution so the jq
 # --argjson path works on Windows Git Bash (where /proc/<pid>/fd/N used by
 # <(...) is unavailable and --slurpfile silently fails, yielding empty fields).
 HAS_RL=0
 _SETTINGS=$(cat "$HOME/.claude/settings.json" 2>/dev/null)
-echo "$_SETTINGS" | jq -e . >/dev/null 2>&1 || _SETTINGS='{}'
-IFS=$'\t' read -r MODEL DIR PCT CTX COST EFF HAS_RL U5 U7 R5 R7 TIN < <(
+echo "$_SETTINGS" | jq -e 'type == "object"' >/dev/null 2>&1 || _SETTINGS='{}'
+IFS=$'\t' read -r MODEL DIR PCT CTX COST EFF HAS_RL U5 U7 R5 R7 TIN SID CACHE_WARM CACHE_SEEN CACHE_EXP CACHE_TTL < <(
   jq -r --argjson cfg "$_SETTINGS" \
-    '[(.model.display_name//"?"),(.workspace.project_dir//"."|gsub("\\\\";"/")),
+    '[(.model.display_name//"?"),(.workspace.project_dir//.workspace.current_dir//"."|gsub("\\\\";"/")),
     (.context_window.used_percentage//0|floor),(.context_window.context_window_size//0),
     (.cost.total_cost_usd//0),
     (.effort.level//$cfg.effortLevel//"default"),
@@ -126,9 +135,62 @@ IFS=$'\t' read -r MODEL DIR PCT CTX COST EFF HAS_RL U5 U7 R5 R7 TIN < <(
     (.rate_limits.seven_day.used_percentage//null|if type=="number" then floor else "--" end),
     (.rate_limits.five_hour.resets_at//0),
     (.rate_limits.seven_day.resets_at//0),
-    (if (.context_window.total_input_tokens|type)=="number" then (.context_window.total_input_tokens|floor) else -1 end)]|@tsv' <<<"$input"
+    (if (.context_window.total_input_tokens|type)=="number" then (.context_window.total_input_tokens|floor) else -1 end),
+    # Bash read collapses empty TSV fields; keep this optional slot nonempty.
+    (.session_id//.sessionId//":"|if .=="" then ":" else . end),
+    (.prompt_cache.warm//false|tostring),
+    (.prompt_cache.caching_observed//false|tostring),
+    (.prompt_cache.expires_at//0),
+    (.prompt_cache.ttl//"--")]|@tsv' <<<"$input"
 )
 case "${EFF:-default}" in low) EF='low' ;; high) EF='high' ;; xhigh) EF='xhigh' ;; max) EF='max' ;; *) EF='medium' ;; esac
+
+# The last model activity is the latest assistant response carrying API usage.
+# Tool results and background queue events are not model requests and must not
+# reset this timer. The cache TTL is read separately from prompt_cache below.
+_session_idle_label() {
+  local sid="$1" dir="$2" key path last_ts last_epoch age_s mins
+  [[ "$sid" =~ ^[A-Za-z0-9._-]+$ ]] || return
+  [[ "$dir" == /* ]] || return
+  key="-${dir#/}"
+  key="${key//\//-}"
+  path="$HOME/.claude/projects/${key}/${sid}.jsonl"
+  [ -f "$path" ] || return
+  last_ts=$(tail -n 400 "$path" 2>/dev/null | jq -r 'select(.type=="assistant" and (.message.usage|type)=="object" and (.isSidechain != true) and (.timestamp|type)=="string") | .timestamp' 2>/dev/null | sort | tail -1)
+  [[ -n "$last_ts" ]] || return
+  last_ts=$(printf '%s' "$last_ts" | sed -E 's/\.[0-9]+Z$/Z/')
+  last_epoch=$(/bin/date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$last_ts" '+%s' 2>/dev/null || /bin/date -d "$last_ts" '+%s' 2>/dev/null)
+  [[ "$last_epoch" =~ ^[0-9]+$ ]] || return
+  age_s=$((NOW - last_epoch))
+  ((age_s < 0)) && age_s=0
+  mins=$((age_s / 60))
+  if ((mins >= 60)); then
+    printf "${R}last %dh %dm${N}" $((mins / 60)) $((mins % 60))
+  else
+    printf "${D}last %dm${N}" "$mins"
+  fi
+}
+IDLE_LABEL=$(_session_idle_label "$SID" "$DIR")
+
+# Claude Code's prompt_cache.expires_at is the real cache TTL boundary. Its
+# epoch keeps counting down on refreshInterval even when the session is idle.
+CACHE_LABEL=""
+if [[ "$CACHE_EXP" =~ ^[0-9]+$ ]] && ((CACHE_EXP > 0)); then
+  remain_s=$((CACHE_EXP - NOW))
+  if ((remain_s > 0)); then
+    remain_m=$(((remain_s + 59) / 60))
+    if ((remain_m <= 5)); then CC=$R; elif ((remain_m <= 15)); then CC=$Y; else CC=$G; fi
+    CACHE_LABEL="${CC}cache ${remain_m}m${N}"
+  else
+    CACHE_LABEL="${R}cache cold${N}"
+  fi
+elif [[ "$CACHE_WARM" == "true" ]]; then
+  CACHE_LABEL="${G}cache warm${N}"
+elif [[ "$CACHE_SEEN" == "true" ]]; then
+  CACHE_LABEL="${R}cache cold${N}"
+else
+  CACHE_LABEL="${D}cache --${N}"
+fi
 
 # ── Auto-compact window: track usage against the compaction threshold ──
 # When CLAUDE_CODE_AUTO_COMPACT_WINDOW is set, compaction fires at that token
@@ -237,9 +299,24 @@ else
   SHOW_COST=1
 fi
 
-# Combined usage formatter: used% [pace delta] (countdown)
+# Format the absolute reset time in the local timezone.
+_reset_label() {
+  local epoch="$1" reset_date today clock
+  [[ "$epoch" =~ ^[0-9]+$ ]] && ((epoch > 0)) || return
+  reset_date=$(date -r "$epoch" '+%Y-%m-%d' 2>/dev/null || date -d "@$epoch" '+%Y-%m-%d' 2>/dev/null) || return
+  today=$(date '+%Y-%m-%d') || return
+  if [[ "$reset_date" == "$today" ]]; then
+    clock=$(date -r "$epoch" '+%H:%M' 2>/dev/null || date -d "@$epoch" '+%H:%M' 2>/dev/null) || return
+    printf '↻%s' "$clock"
+  else
+    clock=$(date -r "$epoch" '+%m-%d %H:%M' 2>/dev/null || date -d "@$epoch" '+%m-%d %H:%M' 2>/dev/null) || return
+    printf '↻%s' "$clock"
+  fi
+}
+
+# Combined usage formatter: used% [pace delta] (countdown + reset time)
 _usage() {
-  local u="${1:---}" rm="$2" w="$3"
+  local u="${1:---}" rm="$2" w="$3" reset_epoch="${4:-}" reset_label
   if [[ ! "$u" =~ ^[0-9]+$ ]]; then
     printf "%s" "$u"
   else
@@ -252,15 +329,22 @@ _usage() {
     fi
   fi
   [[ "$rm" =~ ^[0-9]+$ ]] || return
-  ((rm >= 1440)) && {
-    printf " ${D}%dd${N}" $((rm / 1440))
-    return
-  }
-  ((rm >= 60)) && {
-    printf " ${D}%dh${N}" $((rm / 60))
-    return
-  }
-  printf " ${D}%dm${N}" "$rm"
+  if ((rm >= 1440)); then
+    local days=$((rm / 1440)) hours=$(((rm % 1440) / 60)) minutes=$((rm % 60))
+    if ((hours > 0)); then
+      printf " ${D}%dd %dh %dm${N}" "$days" "$hours" "$minutes"
+    elif ((minutes > 0)); then
+      printf " ${D}%dd %dm${N}" "$days" "$minutes"
+    else
+      printf " ${D}%dd${N}" "$days"
+    fi
+  elif ((rm >= 60)); then
+    printf " ${D}%dh %dm${N}" $((rm / 60)) $((rm % 60))
+  else
+    printf " ${D}%dm${N}" "$rm"
+  fi
+  reset_label=$(_reset_label "$reset_epoch")
+  [[ -n "$reset_label" ]] && printf " ${D}%s${N}" "$reset_label"
 }
 
 # ── Output Assembly (symmetric single-pipe alignment) ──
@@ -281,7 +365,9 @@ fi
 L1="${C}${MODEL} ${EF}${N}${PAD1} ${D}|${N}  ${L1R}"
 
 # Line 2: bar pct% CL | 5h used% ...  7d used% ...
-L2="${BC}${BAR}${N} ${PCT}% ${CL}${PAD2} ${D}|${N}  5h $(_usage "$U5" "$RM5" 300)  7d $(_usage "$U7" "$RM7" 10080)"
+L2="${BC}${BAR}${N} ${PCT}% ${CL}${PAD2} ${D}|${N}  5h $(_usage "$U5" "$RM5" 300 "$R5")  7d $(_usage "$U7" "$RM7" 10080 "$R7")"
+L2+="  $CACHE_LABEL"
+[[ -n "$IDLE_LABEL" ]] && L2+="  $IDLE_LABEL"
 # Session cost: only when usage data is unavailable in stdin.
 if [[ "$SHOW_COST" == "1" ]]; then
   printf -v _CS "\$%.2f" "$COST" 2>/dev/null
