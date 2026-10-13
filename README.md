@@ -13,6 +13,16 @@ Opus (200K) high    | my-project (main) 2f +12 -3
 
 以上是示意数据，不是任何真实账户的额度。
 
+## 缓存倒计时与简短保活（1.2.0）
+
+额度命令现在同时返回 `cache=2640s`（对应状态栏的 `cache 44m`）。JSON 的 `prompt_cache` 包含 `expires_at`、`remaining_seconds` 和 `status`（`warm` / `expired` / `unknown` / `stale`）。额度重置的绝对时间仍在各窗口的 `resets_at`，与缓存到期时间分开。
+
+启用 live hook 后，在工具调用边界检查到缓存剩余 1–300 秒，且额度建议为 `normal` 或 `conserve` 时，提醒 Claude 在下一次正常回复用最多一句话说明已完成／当前／下一步。每个缓存到期时间只提醒一次；新读数显示缓存续期后，才允许下一轮提醒。优先服从额度限制：`stop`、未知额度或未知／过期缓存不触发保活。
+
+这里复用同一会话的正常模型回复，避免单独空发消息或创建额外定时模型任务。实际模型请求命中缓存才可能续期，读取本地服务不会续缓存；检查和回复仍可能消耗 token，没有续期成功保证。完全空闲的会话、长时间没有工具调用的会话不会被自动唤醒，所以不保证持续保温。缓存过期也不代表对话上下文消失。
+
+更新时在仓库执行 `git pull`，然后依次运行 `python3 service/install.py`、`python3 service/install-plugin.py`、`python3 service/install-live-hook.py`。仅重载本地读数服务，不重启 Claude 会话；现有会话在下个工具边界采用新版 hook，插件命令可用 `/reload-plugins` 加载。
+
 ## 能看到什么
 
 - 模型、上下文容量与推理强度。

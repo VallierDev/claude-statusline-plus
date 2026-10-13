@@ -13,6 +13,12 @@ Opus (200K) high    | my-project (main) 2f +12 -3
 
 Illustrative data; percentages above are not a real account's usage.
 
+## Cache countdown and brief keepalive (1.2.0)
+
+Queries now include `cache=2640s`; JSON `prompt_cache` has `expires_at`, `remaining_seconds`, and `status` (warm/expired/unknown/stale). Quota `resets_at` remains separate. At tool boundaries, the opt-in live hook requests a one-sentence progress checkpoint in the next normal response when cache has 1–300 seconds left and quota advice is normal/conserve. It reminds once per reported expiry; stop/unknown quota or invalid cache never triggers keepalive.
+
+This reuses the same session and normal model response, without an extra model timer. Only an actual cache-hit request may refresh cache; local reads do not. Model usage still costs tokens; refresh is not guaranteed. Idle sessions and sessions without tool boundaries are not automatically woken. Expired cache does not delete conversation context. Update the checkout then rerun the service, plugin and live-hook installers; Claude processes are not restarted.
+
 ## What it shows
 
 | Indicator | Meaning |

@@ -44,6 +44,21 @@ class QuotaTests(unittest.TestCase):
         capture({'rate_limits':self.limits()},self.state,1000)
         self.assertEqual(query(state=self.state,now=1010)['status'],'unknown')
 
+class CacheTests(unittest.TestCase):
+    def test_cache_countdown_and_invalid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state=Path(tmp)
+            capture({'session_id':'a','prompt_cache':{'expires_at':1200}},state,1000)
+            r=query('a',state=state,now=1010)['sessions'][0]
+            self.assertEqual(r['prompt_cache']['remaining_seconds'],190)
+            self.assertIn('cache=190s',compact({'status':'ok','sessions':[r]}))
+            self.assertEqual(query('a',state=state,now=1201)['sessions'][0]['prompt_cache']['status'],'stale')
+            capture({'session_id':'a','prompt_cache':{'expires_at':1200}},state,1201)
+            self.assertEqual(query('a',state=state,now=1202)['sessions'][0]['prompt_cache']['status'],'expired')
+            for expiry in (None,True,'1200',float('nan')):
+                capture({'session_id':'a','prompt_cache':{'expires_at':expiry}},state,1203)
+                self.assertEqual(query('a',state=state,now=1204)['sessions'][0]['prompt_cache']['status'],'unknown')
+
 class SocketTests(unittest.TestCase):
     def test_private_socket_http_contract(self):
         import quota

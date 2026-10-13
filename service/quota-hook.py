@@ -23,15 +23,21 @@ def handle(payload, now=None, state=STATE, reader=fetch):
         return None
     data=reader(SimpleNamespace(session=sid,cwd=None,list=False))
     advice=data['sessions'][0]['advice'] if data.get('status')=='ok' else 'unknown'
-    notify=not previous or advice!=previous.get('advice') or now-previous.get('notified_at',0)>=600
+    session = data['sessions'][0] if data.get('status') == 'ok' else {}
+    cache = session.get('prompt_cache') or {}
+    expiry = cache.get('expires_at')
+    due = (cache.get('status') == 'warm' and isinstance(cache.get('remaining_seconds'), (int,float))
+           and 0 < cache['remaining_seconds'] <= 300 and advice in ('normal','conserve')
+           and previous.get('keepalive_expiry') != expiry)
+    notify=due or not previous or advice!=previous.get('advice') or now-previous.get('notified_at',0)>=600
     record={'session_id':sid,'checked_at':now,'advice':advice,'notified_at':now if notify else previous.get('notified_at',0),'deliveries':previous.get('deliveries',0)+int(notify)}
+    record['keepalive_expiry'] = expiry if due else previous.get('keepalive_expiry')
     atomic(path,record)
     if not notify: return None
-    context=('Quota checkpoint (user-requested): '+compact(data)+'. '
-             'Working rule: >=80% used in either window means batch tools and avoid optional analysis; '
-             '>=95% means finish a safe checkpoint, report reset time and defer discretionary work. '
-             'Unknown is not full quota. Preserve current task; no model timer or repeated polling needed. '
-             'Reported statusline data can be cached. This hook supplies the next checkpoint automatically; user can override advice.')
+    context = 'Quota/cache checkpoint: '+compact(data)+'. >=80% used: conserve; >=95%: safe checkpoint and defer optional work. Unknown is not full quota. No duplicate polling.'
+    if due:
+        context += (' Cache expires within 5 minutes. At the next normal response, give one very short progress checkpoint (at most one sentence: completed/current/next), then continue under quota rules. '
+                    'Reuse this same session; no new agent, repeated keepalive, unrelated tool, or extra model timer. An actual cache-hit model request may refresh cache; local queries do not. Do not interrupt a running tool.')
     return {'hookSpecificOutput':{'hookEventName':event,'additionalContext':context}}
 
 if __name__=='__main__':

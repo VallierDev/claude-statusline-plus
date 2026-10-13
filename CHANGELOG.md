@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+
+- Return prompt cache expiry and remaining seconds in quota queries.
+- Request one brief progress checkpoint per near-expiry window at live tool boundaries, subject to quota advice.
+- Skip stale/missing/expired cache and stop/unknown quota; no model timers or session restarts.
+
 ## 1.1.0
 
 - Add a compact quota plugin command and private session-scoped local reader service for Linux/macOS.

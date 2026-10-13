@@ -54,7 +54,10 @@ def capture(payload, state=STATE, now=None):
             'resets_at': reset if number(reset) and reset > 0 else None,
         }
     cwd = payload.get('cwd') or (payload.get('workspace') or {}).get('current_dir')
-    record = {'session_id': sid, 'cwd': cwd if isinstance(cwd, str) else None,
+    cache = payload.get('prompt_cache')
+    expiry = cache.get('expires_at') if isinstance(cache, dict) else None
+    cache_data = {'expires_at': expiry if number(expiry) and expiry > 0 else None}
+    record = {'prompt_cache': cache_data, 'session_id': sid, 'cwd': cwd if isinstance(cwd, str) else None,
               'received_at': time.time() if now is None else now, 'windows': windows}
     atomic(state / (hashlib.sha256(sid.encode()).hexdigest() + '.json'), record)
 
@@ -75,6 +78,10 @@ def view(record, now):
         result['windows'][key] = {'status': status, 'used_percentage': used,
             'remaining_percentage': remaining, 'resets_at': reset,
             'reset_in_seconds': max(0, round(reset-now)) if number(reset) else None}
+    expiry = (record.get('prompt_cache') or {}).get('expires_at')
+    cache_status = 'stale' if age > TTL else 'unknown' if not number(expiry) else 'warm' if expiry > now else 'expired'
+    result['prompt_cache'] = {'status': cache_status, 'expires_at': expiry,
+        'remaining_seconds': max(0, math.ceil(expiry-now)) if number(expiry) and age <= TTL else None}
     result['advice'] = 'stop' if 'stop' in levels else 'unknown' if 'unknown' in levels else 'conserve' if 'conserve' in levels else 'normal'
     return result
 
@@ -108,6 +115,8 @@ def compact(data):
     for key, label in (('five_hour', '5h'), ('seven_day', '7d')):
         w = r['windows'][key]
         parts.append(f"{label} remaining={w['remaining_percentage']}% reset_in={w['reset_in_seconds']}s" if w['status']=='available' else f"{label}={w['status']}")
+    cache = r.get('prompt_cache') or {}
+    parts.append(f"cache={cache['remaining_seconds']}s" if cache.get('status') == 'warm' else f"cache={cache.get('status', 'unknown')}")
     return '; '.join(parts + [f"advice={r['advice']}", f"received_age={r['age_seconds']}s (reported data)"])
 
 
@@ -196,6 +205,7 @@ def main():
         comparison = json.loads(json.dumps(data))
         for r in comparison['sessions']:
             r.pop('age_seconds', None)
+            (r.get('prompt_cache') or {}).pop('remaining_seconds', None)
             for w in r['windows'].values():
                 w.pop('reset_in_seconds', None)
         stable = json.dumps(comparison, sort_keys=True)
