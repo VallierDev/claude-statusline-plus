@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Add a compact quota plugin command and private session-scoped local reader service for Linux/macOS.
+- Preserve existing statusline rendering; return unknown for missing/stale/expired data and ambiguity for multiple sessions.
+- Add local zero-model watch, advisory checkpoint guidance, scoped backups and rollback.
+
 ## 1.0.0
 
 - Enhanced fork of [Astro-Han/claude-pace](https://github.com/Astro-Han/claude-pace), retaining its MIT license and attribution.

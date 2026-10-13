@@ -3,6 +3,8 @@ description: Install Claude Statusline Plus without changing account or permissi
 allowed-tools: Bash, Read, Write, Edit
 ---
 
+If the user wants the quota command/service, run `python3 "${CLAUDE_PLUGIN_ROOT}/service/install.py"` instead of replacing an existing quota wrapper with the display-only script. The installer preserves the renderer and other settings. Explain that new sessions load the quota guidance and command. Do not restart existing sessions.
+
 Check `command -v jq`. If missing, ask the user to install jq and stop.
 Read the current `~/.claude/settings.json`. Do not overwrite unrelated settings.
 Back up existing settings and any existing `~/.claude/claude-statusline-plus.sh` before updating them.

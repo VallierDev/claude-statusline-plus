@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Claude Statusline Plus marketplace",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "plugins": [
     {
@@ -13,7 +13,7 @@
       "source": {
         "source": "github",
         "repo": "VallierDev/claude-statusline-plus",
-        "ref": "v1.0.0"
+        "ref": "v1.1.0"
       },
       "description": "Claude Code quota pace, context, prompt-cache countdown and last model activity. Bash + jq.",
       "category": "monitoring",

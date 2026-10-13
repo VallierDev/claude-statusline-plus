@@ -74,6 +74,58 @@ chmod +x ~/.claude/claude-statusline-plus.sh
 
 安装后打开一个新的 Claude Code 会话。
 
+## Claude 自查额度命令与本机服务（1.1.0）
+
+新增 `/pace-statusline-plus:quota`：通过 Claude Code 的 `${CLAUDE_SESSION_ID}` 替换准确读取自己的会话额度，最多回复两句。终端也可以直接运行：
+
+```bash
+~/.local/bin/claude-quota --compact --cwd "$PWD"
+~/.local/bin/claude-quota --list
+~/.local/bin/claude-quota --compact --session <明确属于当前会话的ID>
+```
+
+服务支持 Ubuntu/Linux（systemd 用户服务）和 macOS（LaunchAgent）。在仓库目录安装：
+
+```bash
+python3 service/install.py
+# 从当前 checkout 安装本地插件，避免仍加载旧版本缓存
+python3 service/install-plugin.py
+```
+
+Python 3.9+、Claude Code CLI；原状态栏的运行依赖仍须满足。安装器备份相关文件，保留原状态栏命令及其他设置，只增加数据转发、用户服务和 `~/.claude/CLAUDE.md` 的额度约定；不修改 hooks、账户或权限。插件安装器只注册本插件，保留其他插件。已有会话不重启；状态栏命令变更通常会被当前 Claude Code 读取，插件命令和 CLAUDE.md 约定在新会话加载，不能保证已有会话已经接受新约定。
+
+服务只读取状态栏 stdin 的 `session_id`、目录和 5h/7d 额度字段，写入用户私有缓存。它不读取凭据、不读取对话、不访问 Anthropic API，也不开放 TCP 端口；通过权限 `0600` 的 Unix socket 提供 `/health` 和 `/v1/quota`。Linux socket 在 `$XDG_RUNTIME_DIR/claude-quota.sock`（默认 `/run/user/<uid>/claude-quota.sock`），macOS 在 `~/.cache/claude-quota/reader.sock`。
+
+状态栏每 60 秒转发一次；后台轮询可直接运行，不调用模型：
+
+```bash
+~/.local/bin/claude-quota --watch --compact --interval 60
+```
+
+该命令持续运行、只打印状态变化，用 Ctrl-C 停止。不要把无限循环作为 Claude 的阻塞工具任务；如需常驻输出，在独立终端运行。默认工作约定是在长任务开始和自然检查点（持续工作约每 10 分钟）执行一次查询。后台读数本身不消耗模型 token，Claude 读取结果和回复仍会消耗少量 token；没有固定 token 数保证，也没有定时唤醒模型。
+
+返回剩余百分比和重置倒计时，不是剩余 token 数。默认建议：任一窗口使用率达到 80% 节省，达到 95% 完成安全检查点并延期可选工作。建议依赖 Claude 遵守，不是强制停止或自动恢复机制。多会话不合并，也不自动挑最新账户；目录匹配多条时返回 `ambiguous`，需要明确的会话 ID。缺失、超过 180 秒未收到数据或重置时间已过均返回未知，不假设额度已经补满。`received_age` 只是接收时间：定时刷新可能复用 Claude Code 缓存，服务不独立验证余额；切换账户后须等待实际响应产生对应额度再信任读数。没有任何会话上报时会显示 `unknown`。
+
+查看服务：
+
+```bash
+# Linux
+systemctl --user status claude-quota.service
+# macOS
+launchctl print gui/$(id -u)/com.vallierdev.claude-quota
+```
+
+Linux 用户服务退出登录后保持运行需要现有 linger 配置；安装器不会自行修改系统 linger。macOS LaunchAgent 随用户登录启动。
+
+恢复安装器打印的备份（只恢复状态栏相关字段，不整份覆盖后来设置）：
+
+```bash
+python3 service/rollback.py ~/.claude/backups/claude-quota/<备份目录>
+claude plugin uninstall pace-statusline-plus@pace-statusline-plus-local
+```
+
+服务备份和插件配置备份分别位于 `~/.claude/backups/claude-quota` 与 `~/.claude/backups/claude-quota-plugin`，可能含私有设置，不提交 Git。
+
 ## 为什么额度或缓存显示 `--`
 
 额度来自 Claude Code 的 stdin `rate_limits` 字段。根据[官方文档](https://code.claude.com/docs/en/statusline)，Pro / Max 和部分网关配置会提供该数据，通常首次 API 响应后才出现；单个窗口也可能缺失。缺少数据时显示占位符，不用旧账户的缓存额度填充。
@@ -97,6 +149,7 @@ bash -n claude-pace.sh
 test_home=$(mktemp -d)
 HOME="$test_home" XDG_RUNTIME_DIR="" bash test.sh
 python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s service -p "test_quota.py" -v
 ```
 
 上游回归测试额外需要 Perl。CI 在 macOS 与 Linux 运行；新增测试覆盖缓存与额度独立显示、模型活动计时、字段缺失、异常输入，以及安装器保留其他配置。

@@ -25,6 +25,41 @@ Illustrative data; percentages above are not a real account's usage.
 | `cache` | Prompt-cache countdown when Claude Code supplies expiry data |
 | `last` | Time since a main-session assistant response carrying API usage; tool results do not reset it |
 
+## Quota command and local reader service (1.1.0)
+
+`/pace-statusline-plus:quota` uses Claude Code’s `${CLAUDE_SESSION_ID}` substitution to run one compact local query for its own session and replies in at most two short sentences. From this checkout, install the Linux systemd user service or macOS LaunchAgent and the exact local plugin:
+
+```bash
+python3 service/install.py
+python3 service/install-plugin.py
+~/.local/bin/claude-quota --compact --cwd "$PWD"
+~/.local/bin/claude-quota --list
+~/.local/bin/claude-quota --compact --session <your-session-id>
+```
+
+Requires Python 3.9+ and Claude Code CLI, plus your existing statusline dependencies. The installer backs up affected files, preserves the existing renderer and other settings, and adds quota guidance to `~/.claude/CLAUDE.md`. It does not change hooks, credentials or permissions, or restart Claude sessions. New sessions load the plugin command and guidance; existing sessions may reload statusline settings but are not guaranteed to adopt the guidance.
+
+The statusline forwards whitelisted session ID, directory and 5h/7d quota fields every 60 seconds. The service never reads credentials/conversations or calls Anthropic. It serves `/health` and `/v1/quota` through a private `0600` Unix socket, with no TCP listener: `$XDG_RUNTIME_DIR/claude-quota.sock` on Linux (default `/run/user/<uid>/claude-quota.sock`), `~/.cache/claude-quota/reader.sock` on macOS.
+
+```bash
+~/.local/bin/claude-quota --watch --compact --interval 60
+```
+
+This foreground watch prints changes until Ctrl-C and calls no model. Run it in a separate terminal, not as an endless blocking Claude tool. Guidance asks Claude to read once before long work and at natural checkpoints (roughly every 10 minutes of sustained work). Local polling costs no model tokens; model reads/replies still cost tokens. There is no automatic model wakeup or guaranteed token count.
+
+Results are reported percentages, not token counts. Advice defaults to conserve at 80% used and checkpoint/defer discretionary work at 95%; this is advisory, not enforced stop/resume. Multiple matching sessions return `ambiguous` and require an explicitly identified session ID. Missing data, receipts older than 180 seconds and expired reset times return unknown, never assumed full quota. Receipt age is not provider freshness: timer refreshes may reuse Claude Code data, and account switches require a real response before trusting the new quota. No independent account balance query is performed.
+
+Inspect with `systemctl --user status claude-quota.service` on Linux or `launchctl print gui/$(id -u)/com.vallierdev.claude-quota` on macOS. Linux persistence after logout depends on existing linger configuration; the installer does not change it. The macOS agent starts at user login.
+
+To restore the installation backup without overwriting unrelated settings added later:
+
+```bash
+python3 service/rollback.py ~/.claude/backups/claude-quota/<backup-directory>
+claude plugin uninstall pace-statusline-plus@pace-statusline-plus-local
+```
+
+Private service/plugin backups live under `~/.claude/backups/claude-quota` and `claude-quota-plugin`; never upload them. See [中文说明](README.zh-CN.md) for more detail.
+
 ## Install
 
 Runtime: **Bash 3.2+**, **jq** and standard Unix utilities. Git is needed for the optional Git segment. macOS and Linux are the supported targets; Windows Git Bash has inherited path normalization but is not verified by this fork's CI.
@@ -104,6 +139,7 @@ bash -n claude-pace.sh
 test_home=$(mktemp -d)
 HOME="$test_home" XDG_RUNTIME_DIR="" bash test.sh
 python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s service -p "test_quota.py" -v
 ```
 
 Inherited regression tests additionally use Perl. CI runs the suites on macOS and Linux. The added tests cover quota/cache separation, activity timestamps, missing fields, malformed input, and preservation of unrelated installer settings.

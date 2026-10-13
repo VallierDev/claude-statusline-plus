@@ -1,13 +1,14 @@
 {
   "name": "pace-statusline-plus",
   "description": "Claude Code quota pace, context, prompt-cache countdown and last model activity. Bash + jq.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": {
     "name": "VallierDev",
     "url": "https://github.com/VallierDev"
   },
   "commands": [
-    "./commands/setup.md"
+    "./commands/setup.md",
+    "./commands/quota.md"
   ],
   "homepage": "https://github.com/VallierDev/claude-statusline-plus",
   "repository": "https://github.com/VallierDev/claude-statusline-plus",
