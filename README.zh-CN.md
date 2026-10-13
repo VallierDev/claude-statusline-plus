@@ -1,8 +1,8 @@
 # Claude Statusline Plus
 
-Claude Code 双行状态栏：额度使用进度、上下文用量、缓存剩余时间，以及距离上次模型响应的时间。
+Claude Code 双行状态栏与本地额度服务：显示额度和上下文用量，让 Claude 用一次简短命令查询自己的额度，并在工作检查点收到省 token 提醒。
 
-[English](README.md) · [上游项目](https://github.com/Astro-Han/claude-pace) · [MIT 许可证](LICENSE)
+[English](README.en.md) · [上游项目](https://github.com/Astro-Han/claude-pace) · [MIT 许可证](LICENSE)
 
 这是 **Astro-Han/claude-pace 的增强版 fork**，保留原作者署名和 MIT 许可证。新增的缓存与活动时间显示来自实际使用的 macOS / Ubuntu 配置，与 Anthropic 没有官方关联。
 
@@ -23,7 +23,93 @@ Opus (200K) high    | my-project (main) 2f +12 -3
 - `cache`：Claude Code 提供有效期时，显示缓存倒计时。
 - `last`：距离主会话中上次带 API usage 的模型响应多久；工具结果不会重置这个计时。
 
-## 安装
+## 在 Claude Code 中使用
+
+### 完整安装：状态栏、额度命令和服务
+
+在本机或希望运行 Claude Code 的目标机器上执行。需要 Bash、jq、Python 3.9+ 和已安装的 Claude Code CLI；macOS 与 Linux 均支持。
+
+```bash
+git clone https://github.com/VallierDev/claude-statusline-plus.git
+cd claude-statusline-plus
+python3 service/install.py
+python3 service/install-plugin.py
+# 可选：让正在运行的会话也在工具调用时收到额度提醒
+python3 service/install-live-hook.py
+```
+
+`service/install.py` 安装并启动服务，保留已有状态栏显示；没有原状态栏时使用本项目的显示脚本。`service/install-plugin.py` 安装当前 checkout 的插件命令。最后一条明确开启命令型 hook，保留已有 hooks，无需重启 Claude 进程。已有会话可输入 `/reload-plugins` 加载新插件命令；也可以在之后的新会话使用。不要在额度服务安装完成后再次运行下面的“仅安装状态栏”流程，以免替换数据转发命令。
+
+也可以从 GitHub 插件市场安装：
+
+```text
+/plugin marketplace add VallierDev/claude-statusline-plus
+/plugin install pace-statusline-plus@pace-statusline-plus-marketplace
+```
+
+市场插件提供命令和安装源码，**不会仅凭安装插件就启动额度服务**。随后告诉 Claude：“请使用此插件的 `service/install.py` 安装本地额度服务，保留当前状态栏与其他配置；再运行 `service/install-live-hook.py`，让当前会话在工作检查点收到额度提醒。”如果已按上面的 checkout 流程安装，无需重复注册另一个市场版本。
+
+### 查询自己的额度
+
+在 Claude Code 输入：
+
+```text
+/pace-statusline-plus:quota
+```
+
+命令使用 Claude Code 提供的当前会话 ID，返回 5 小时／7 天剩余百分比、重置倒计时和建议。读数示例（模拟数据）：
+
+```text
+5h remaining=72% reset_in=10800s; 7d remaining=60% reset_in=345600s; advice=normal; received_age=5s (reported data)
+```
+
+也可以让 Claude 在 Bash 工具中执行：
+
+```bash
+~/.local/bin/claude-quota --compact --cwd "$PWD"
+```
+
+同一目录存在多个会话时会返回 `ambiguous`；优先使用上面的插件命令。终端手动排查可用 `--list` 查看会话，再用 `--session <自己的会话ID>` 查询；不要拿别的会话读数作判断。
+
+| 返回值 | 含义与处理 |
+| --- | --- |
+| `normal` | 两个窗口均有效且使用率低于 80%，按原任务继续 |
+| `conserve` | 任一窗口使用率达到 80%，合并工具调用、减少重复分析 |
+| `stop` | 任一窗口使用率达到 95%，完成安全检查点并延期可选工作 |
+| `unknown` / `stale` | 数据缺失、过期或窗口已到重置时间，不能假设额度恢复 |
+| `ambiguous` | 多会话匹配，改用当前会话 ID 查询 |
+| `service_unavailable` | 服务未运行或 socket 不可访问，先检查服务 |
+
+这些是建议，不会强制终止进程。剩余百分比不是剩余 token 数。
+
+### 发给正在工作的 Claude 的提示词
+
+```text
+继续当前任务，并按额度控制工作。在持续工作的自然检查点（约每 10 分钟）读取自己的额度，优先使用 /pace-statusline-plus:quota；若未加载，执行 ~/.local/bin/claude-quota --compact --cwd "$PWD"。如果 hook 已提供额度简报，直接使用，避免重复查询。
+任一窗口已用达到 80% 时合并工具调用、减少重复分析；达到 95% 时完成安全收尾，保存进度和下一步，报告重置时间，延期可选工作。未知、过期或多会话歧义不视为额度恢复。不要为额度查询额外创建模型定时任务，不重启当前会话。
+```
+
+启用 live hook 后，**在发生工具调用时**最多每分钟本地检查一次，每十分钟或建议档位改变才送入一条简报。它不启动独立模型请求；简报进入上下文后仍会带来少量 token 开销。空闲或已经完全停止的会话不会仅因时间到达而被唤醒。
+
+### 省 token 等待与恢复工作
+
+已经有定时监视／检查机制的 Claude，可以接收这段提示：
+
+```text
+在已有的定时检查中读取自己的额度：使用 /pace-statusline-plus:quota；未加载时执行 ~/.local/bin/claude-quota --compact --cwd "$PWD"。当 5 小时和 7 天窗口都有有效读数、已用都低于 80% 时恢复当前任务；否则继续等待。unknown、stale、ambiguous 和单纯倒计时归零，都不能作为额度已恢复的证据。不要重复创建定时器。
+```
+
+**本项目没有自动唤醒或自动续跑功能。** 如果 Claude 已经停止、没有既有定时检查，请在需要继续时发送“现在查询自己的额度，若两个窗口已用都低于 80%，继续之前的任务”。
+
+独立终端可以持续看读数：
+
+```bash
+~/.local/bin/claude-quota --watch --compact --interval 60
+```
+
+这个 watch 只轮询本地服务、打印变化，不消耗模型 token，也不会向 Claude 提交消息或恢复任务。不要让 Claude 把它当无限运行的阻塞工具任务。额度来源是 Claude Code 已上报的状态栏数据；状态栏定时刷新可能复用缓存，不等于向 Anthropic 查询最新余额。窗口过期后会返回未知，等待实际的新读数，不能推算为已补满。
+
+## 仅安装状态栏
 
 运行依赖：Bash 3.2+、jq、常见 Unix 工具。Git 信息需要 Git。支持 macOS 和 Linux；Windows Git Bash 保留上游路径处理，但此 fork 尚未验证。
 

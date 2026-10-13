@@ -1,74 +1,117 @@
 # Claude Statusline Plus
 
-A two-line Claude Code statusline with quota pace, context usage, prompt-cache expiry and time since the last model response.
+Claude Code 双行状态栏与本地额度服务：显示额度和上下文用量，让 Claude 用一次简短命令查询自己的额度，并在工作检查点收到省 token 提醒。
 
-[简体中文](README.zh-CN.md) · [Upstream](https://github.com/Astro-Han/claude-pace) · [MIT license](LICENSE)
+[English](README.en.md) · [上游项目](https://github.com/Astro-Han/claude-pace) · [MIT 许可证](LICENSE)
 
-An enhanced fork of **Astro-Han/claude-pace**, with the original author and license retained. The additional cache and activity indicators come from a version used on macOS and Ubuntu. This project is not affiliated with Anthropic.
+这是 **Astro-Han/claude-pace 的增强版 fork**，保留原作者署名和 MIT 许可证。新增的缓存与活动时间显示来自实际使用的 macOS / Ubuntu 配置，与 Anthropic 没有官方关联。
 
 ```text
 Opus (200K) high    | my-project (main) 2f +12 -3
 ██░░░░░░░░ 20% 200K | 5h 25% ⇡5% 4h 0m  7d 40% ⇡12% 5d 0h  cache 2m  last 10m
 ```
 
-Illustrative data; percentages above are not a real account's usage.
+以上是示意数据，不是任何真实账户的额度。
 
-## What it shows
+## 能看到什么
 
-| Indicator | Meaning |
-| --- | --- |
-| Model, context capacity, effort | Current Claude Code session configuration |
-| Context bar | Context-window occupancy, separate from subscription quota |
-| `5h` / `7d` | Used percentage, time until reset, and reset clock in your local timezone |
-| `⇡` / `⇣` | Usage ahead of / behind the proportion of the window that has elapsed; a pace indicator, not a forecast |
-| Git branch and changes | Working-tree identity, changed files and added/deleted lines |
-| `cache` | Prompt-cache countdown when Claude Code supplies expiry data |
-| `last` | Time since a main-session assistant response carrying API usage; tool results do not reset it |
+- 模型、上下文容量与推理强度。
+- 上下文进度条，与订阅额度分开显示。
+- 5 小时 / 7 天额度已用比例、重置倒计时和本地时区的重置时间。
+- `⇡` / `⇣`：已用比例相对窗口已过时间的领先 / 落后，不是额度预测。
+- Git 分支、文件变更与增删行数。
+- `cache`：Claude Code 提供有效期时，显示缓存倒计时。
+- `last`：距离主会话中上次带 API usage 的模型响应多久；工具结果不会重置这个计时。
 
-## Live reminders without restarting (explicit opt-in)
+## 在 Claude Code 中使用
 
-Run `python3 service/install-live-hook.py` to add command-only PreToolUse/PostToolUse hooks. Existing hooks are preserved and settings are backed up. Claude Code normally watches settings changes, so running sessions can receive quota context at their next tool boundary. The hook checks at most once per minute and emits a compact reminder every ten minutes or on advice transitions (normal/conserve/stop/unknown). It never starts a model timer, blocks a tool, changes permissions, restarts sessions or forces automatic resume. Idle sessions receive it when they next use a tool. Local receipts in `~/.cache/claude-quota/hook` confirm hook execution, not compliance with advice. Remove only the entries pointing at `quota-hook.py` to disable; do not restore the entire settings backup over later changes.
+### 完整安装：状态栏、额度命令和服务
 
-## Quota command and local reader service (1.1.0)
-
-`/pace-statusline-plus:quota` uses Claude Code’s `${CLAUDE_SESSION_ID}` substitution to run one compact local query for its own session and replies in at most two short sentences. From this checkout, install the Linux systemd user service or macOS LaunchAgent and the exact local plugin:
+在本机或希望运行 Claude Code 的目标机器上执行。需要 Bash、jq、Python 3.9+ 和已安装的 Claude Code CLI；macOS 与 Linux 均支持。
 
 ```bash
+git clone https://github.com/VallierDev/claude-statusline-plus.git
+cd claude-statusline-plus
 python3 service/install.py
 python3 service/install-plugin.py
-~/.local/bin/claude-quota --compact --cwd "$PWD"
-~/.local/bin/claude-quota --list
-~/.local/bin/claude-quota --compact --session <your-session-id>
+# 可选：让正在运行的会话也在工具调用时收到额度提醒
+python3 service/install-live-hook.py
 ```
 
-Requires Python 3.9+ and Claude Code CLI, plus your existing statusline dependencies. The installer backs up affected files, preserves the existing renderer and other settings, and adds quota guidance to `~/.claude/CLAUDE.md`. It does not change hooks, credentials or permissions, or restart Claude sessions. New sessions load the plugin command and guidance; existing sessions may reload statusline settings but are not guaranteed to adopt the guidance.
+`service/install.py` 安装并启动服务，保留已有状态栏显示；没有原状态栏时使用本项目的显示脚本。`service/install-plugin.py` 安装当前 checkout 的插件命令。最后一条明确开启命令型 hook，保留已有 hooks，无需重启 Claude 进程。已有会话可输入 `/reload-plugins` 加载新插件命令；也可以在之后的新会话使用。不要在额度服务安装完成后再次运行下面的“仅安装状态栏”流程，以免替换数据转发命令。
 
-The statusline forwards whitelisted session ID, directory and 5h/7d quota fields every 60 seconds. The service never reads credentials/conversations or calls Anthropic. It serves `/health` and `/v1/quota` through a private `0600` Unix socket, with no TCP listener: `$XDG_RUNTIME_DIR/claude-quota.sock` on Linux (default `/run/user/<uid>/claude-quota.sock`), `~/.cache/claude-quota/reader.sock` on macOS.
+也可以从 GitHub 插件市场安装：
+
+```text
+/plugin marketplace add VallierDev/claude-statusline-plus
+/plugin install pace-statusline-plus@pace-statusline-plus-marketplace
+```
+
+市场插件提供命令和安装源码，**不会仅凭安装插件就启动额度服务**。随后告诉 Claude：“请使用此插件的 `service/install.py` 安装本地额度服务，保留当前状态栏与其他配置；再运行 `service/install-live-hook.py`，让当前会话在工作检查点收到额度提醒。”如果已按上面的 checkout 流程安装，无需重复注册另一个市场版本。
+
+### 查询自己的额度
+
+在 Claude Code 输入：
+
+```text
+/pace-statusline-plus:quota
+```
+
+命令使用 Claude Code 提供的当前会话 ID，返回 5 小时／7 天剩余百分比、重置倒计时和建议。读数示例（模拟数据）：
+
+```text
+5h remaining=72% reset_in=10800s; 7d remaining=60% reset_in=345600s; advice=normal; received_age=5s (reported data)
+```
+
+也可以让 Claude 在 Bash 工具中执行：
+
+```bash
+~/.local/bin/claude-quota --compact --cwd "$PWD"
+```
+
+同一目录存在多个会话时会返回 `ambiguous`；优先使用上面的插件命令。终端手动排查可用 `--list` 查看会话，再用 `--session <自己的会话ID>` 查询；不要拿别的会话读数作判断。
+
+| 返回值 | 含义与处理 |
+| --- | --- |
+| `normal` | 两个窗口均有效且使用率低于 80%，按原任务继续 |
+| `conserve` | 任一窗口使用率达到 80%，合并工具调用、减少重复分析 |
+| `stop` | 任一窗口使用率达到 95%，完成安全检查点并延期可选工作 |
+| `unknown` / `stale` | 数据缺失、过期或窗口已到重置时间，不能假设额度恢复 |
+| `ambiguous` | 多会话匹配，改用当前会话 ID 查询 |
+| `service_unavailable` | 服务未运行或 socket 不可访问，先检查服务 |
+
+这些是建议，不会强制终止进程。剩余百分比不是剩余 token 数。
+
+### 发给正在工作的 Claude 的提示词
+
+```text
+继续当前任务，并按额度控制工作。在持续工作的自然检查点（约每 10 分钟）读取自己的额度，优先使用 /pace-statusline-plus:quota；若未加载，执行 ~/.local/bin/claude-quota --compact --cwd "$PWD"。如果 hook 已提供额度简报，直接使用，避免重复查询。
+任一窗口已用达到 80% 时合并工具调用、减少重复分析；达到 95% 时完成安全收尾，保存进度和下一步，报告重置时间，延期可选工作。未知、过期或多会话歧义不视为额度恢复。不要为额度查询额外创建模型定时任务，不重启当前会话。
+```
+
+启用 live hook 后，**在发生工具调用时**最多每分钟本地检查一次，每十分钟或建议档位改变才送入一条简报。它不启动独立模型请求；简报进入上下文后仍会带来少量 token 开销。空闲或已经完全停止的会话不会仅因时间到达而被唤醒。
+
+### 省 token 等待与恢复工作
+
+已经有定时监视／检查机制的 Claude，可以接收这段提示：
+
+```text
+在已有的定时检查中读取自己的额度：使用 /pace-statusline-plus:quota；未加载时执行 ~/.local/bin/claude-quota --compact --cwd "$PWD"。当 5 小时和 7 天窗口都有有效读数、已用都低于 80% 时恢复当前任务；否则继续等待。unknown、stale、ambiguous 和单纯倒计时归零，都不能作为额度已恢复的证据。不要重复创建定时器。
+```
+
+**本项目没有自动唤醒或自动续跑功能。** 如果 Claude 已经停止、没有既有定时检查，请在需要继续时发送“现在查询自己的额度，若两个窗口已用都低于 80%，继续之前的任务”。
+
+独立终端可以持续看读数：
 
 ```bash
 ~/.local/bin/claude-quota --watch --compact --interval 60
 ```
 
-This foreground watch prints changes until Ctrl-C and calls no model. Run it in a separate terminal, not as an endless blocking Claude tool. Guidance asks Claude to read once before long work and at natural checkpoints (roughly every 10 minutes of sustained work). Local polling costs no model tokens; model reads/replies still cost tokens. There is no automatic model wakeup or guaranteed token count.
+这个 watch 只轮询本地服务、打印变化，不消耗模型 token，也不会向 Claude 提交消息或恢复任务。不要让 Claude 把它当无限运行的阻塞工具任务。额度来源是 Claude Code 已上报的状态栏数据；状态栏定时刷新可能复用缓存，不等于向 Anthropic 查询最新余额。窗口过期后会返回未知，等待实际的新读数，不能推算为已补满。
 
-Results are reported percentages, not token counts. Advice defaults to conserve at 80% used and checkpoint/defer discretionary work at 95%; this is advisory, not enforced stop/resume. Multiple matching sessions return `ambiguous` and require an explicitly identified session ID. Missing data, receipts older than 180 seconds and expired reset times return unknown, never assumed full quota. Receipt age is not provider freshness: timer refreshes may reuse Claude Code data, and account switches require a real response before trusting the new quota. No independent account balance query is performed.
+## 仅安装状态栏
 
-Inspect with `systemctl --user status claude-quota.service` on Linux or `launchctl print gui/$(id -u)/com.vallierdev.claude-quota` on macOS. Linux persistence after logout depends on existing linger configuration; the installer does not change it. The macOS agent starts at user login.
-
-To restore the installation backup without overwriting unrelated settings added later:
-
-```bash
-python3 service/rollback.py ~/.claude/backups/claude-quota/<backup-directory>
-claude plugin uninstall pace-statusline-plus@pace-statusline-plus-local
-```
-
-Private service/plugin backups live under `~/.claude/backups/claude-quota` and `claude-quota-plugin`; never upload them. See [中文说明](README.zh-CN.md) for more detail.
-
-## Install
-
-Runtime: **Bash 3.2+**, **jq** and standard Unix utilities. Git is needed for the optional Git segment. macOS and Linux are the supported targets; Windows Git Bash has inherited path normalization but is not verified by this fork's CI.
-
-Install jq if needed:
+运行依赖：Bash 3.2+、jq、常见 Unix 工具。Git 信息需要 Git。支持 macOS 和 Linux；Windows Git Bash 保留上游路径处理，但此 fork 尚未验证。
 
 ```bash
 # macOS
@@ -77,9 +120,7 @@ brew install jq
 sudo apt-get install jq
 ```
 
-### Settings-preserving installer
-
-The installer additionally needs Python 3.8+.
+推荐使用只修改状态栏配置的安装器，额外需要 Python 3.8+：
 
 ```bash
 git clone https://github.com/VallierDev/claude-statusline-plus.git
@@ -87,9 +128,9 @@ cd claude-statusline-plus
 python3 install.py
 ```
 
-It installs `~/.claude/claude-statusline-plus.sh`, backs up your previous settings, and updates **only `statusLine`**. It does not change your model, permissions, account or other plugins. A 60-second refresh keeps countdowns moving between responses.
+安装器会备份配置，安装 `~/.claude/claude-statusline-plus.sh`，只更新 `statusLine`，不修改模型、权限、账户或其他插件。默认每 60 秒刷新，等待响应时倒计时也会继续变化。
 
-### Manual install
+手动安装：
 
 ```bash
 mkdir -p ~/.claude
@@ -97,7 +138,7 @@ cp claude-pace.sh ~/.claude/claude-statusline-plus.sh
 chmod +x ~/.claude/claude-statusline-plus.sh
 ```
 
-Merge this key into `~/.claude/settings.json`; do not replace the entire file:
+将下面字段合并到 `~/.claude/settings.json`，不要覆盖整个文件：
 
 ```json
 {
@@ -109,7 +150,7 @@ Merge this key into `~/.claude/settings.json`; do not replace the entire file:
 }
 ```
 
-### Claude Code plugin
+也可以通过 Claude Code 插件安装：
 
 ```text
 /plugin marketplace add VallierDev/claude-statusline-plus
@@ -117,37 +158,90 @@ Merge this key into `~/.claude/settings.json`; do not replace the entire file:
 /pace-statusline-plus:setup
 ```
 
-The setup command installs the bundled script and updates only the statusline setting. Start a new session after installation.
+安装后打开一个新的 Claude Code 会话。
 
-## Quota and cache availability
+## 当前会话热加载（明确选择开启）
 
-Claude Code supplies quota data in `rate_limits` on stdin. According to the [official statusline documentation](https://code.claude.com/docs/en/statusline), this data is available for Pro/Max accounts and some gateway configurations, and only after the first API response; individual windows can be absent. A fresh or unsupported session therefore shows `--`, rather than a stale quota snapshot.
+运行 `python3 service/install-live-hook.py`，增加命令型 PreToolUse/PostToolUse hook，备份配置并保留现有 hooks。Claude Code 通常会自动读取 settings 变更，使正在运行的会话在下一次工具调用边界收到额度简报。最多每分钟本地检查一次，每十分钟或建议档位改变才送入模型上下文。不会定时唤醒模型、阻止工具、修改权限、重启会话或自动恢复任务；空闲会话在下次调用工具时接收。`~/.cache/claude-quota/hook` 中回执只能证明 hook 执行，不能证明 Claude 完全遵守建议。关闭时只删除 command 指向 `quota-hook.py` 的条目，不要整份恢复旧配置覆盖后续改动。
 
-The cache countdown uses `prompt_cache.expires_at` supplied by Claude Code. An absent field is not treated as a guessed cache hit or a five-minute timer. `last` is an activity indicator, **not proof that a prompt cache remains valid**. Use a recent Claude Code version; the fork's added fields were verified with 2.1.296. Older versions degrade gracefully when fields are missing.
+## Claude 自查额度命令与本机服务（1.1.0）
 
-## Privacy and local files
+新增 `/pace-statusline-plus:quota`：通过 Claude Code 的 `${CLAUDE_SESSION_ID}` 替换准确读取自己的会话额度，最多回复两句。终端也可以直接运行：
 
-The runtime script makes **no network requests** and reads **no authentication credentials**. It reads session JSON on stdin and local settings. When a session ID is supplied, it reads at most the last 400 lines of that session's local JSONL record to select the latest assistant-usage timestamp; it does not print conversation contents. Git metadata is cached briefly in a user-owned `claude-pace` directory under `$XDG_RUNTIME_DIR` or `~/.cache`.
+```bash
+~/.local/bin/claude-quota --compact --cwd "$PWD"
+~/.local/bin/claude-quota --list
+~/.local/bin/claude-quota --compact --session <明确属于当前会话的ID>
+```
 
-Installation backups are stored locally under `~/.claude/backups/claude-statusline-plus` with restricted permissions. Settings backups can contain your own private settings: do not publish them. This repository contains only source, documentation and synthetic tests.
+服务支持 Ubuntu/Linux（systemd 用户服务）和 macOS（LaunchAgent）。在仓库目录安装：
 
-## Remove or restore
+```bash
+python3 service/install.py
+# 从当前 checkout 安装本地插件，避免仍加载旧版本缓存
+python3 service/install-plugin.py
+```
 
-Remove the `statusLine` key to disable the statusline, or restore **just that key** from the backup path printed by the installer. `previous-statusline.json` records whether the key existed and its old value. Restoring an entire settings backup also reverts settings you changed later, so use a selective restore when appropriate. You can then delete `~/.claude/claude-statusline-plus.sh`.
+Python 3.9+、Claude Code CLI；原状态栏的运行依赖仍须满足。安装器备份相关文件，保留原状态栏命令及其他设置，只增加数据转发、用户服务和 `~/.claude/CLAUDE.md` 的额度约定；不修改 hooks、账户或权限。插件安装器只注册本插件，保留其他插件。已有会话不重启；状态栏命令变更通常会被当前 Claude Code 读取，插件命令和 CLAUDE.md 约定在新会话加载，不能保证已有会话已经接受新约定。
 
-## Development
+服务只读取状态栏 stdin 的 `session_id`、目录和 5h/7d 额度字段，写入用户私有缓存。它不读取凭据、不读取对话、不访问 Anthropic API，也不开放 TCP 端口；通过权限 `0600` 的 Unix socket 提供 `/health` 和 `/v1/quota`。Linux socket 在 `$XDG_RUNTIME_DIR/claude-quota.sock`（默认 `/run/user/<uid>/claude-quota.sock`），macOS 在 `~/.cache/claude-quota/reader.sock`。
+
+状态栏每 60 秒转发一次；后台轮询可直接运行，不调用模型：
+
+```bash
+~/.local/bin/claude-quota --watch --compact --interval 60
+```
+
+该命令持续运行、只打印状态变化，用 Ctrl-C 停止。不要把无限循环作为 Claude 的阻塞工具任务；如需常驻输出，在独立终端运行。默认工作约定是在长任务开始和自然检查点（持续工作约每 10 分钟）执行一次查询。后台读数本身不消耗模型 token，Claude 读取结果和回复仍会消耗少量 token；没有固定 token 数保证，也没有定时唤醒模型。
+
+返回剩余百分比和重置倒计时，不是剩余 token 数。默认建议：任一窗口使用率达到 80% 节省，达到 95% 完成安全检查点并延期可选工作。建议依赖 Claude 遵守，不是强制停止或自动恢复机制。多会话不合并，也不自动挑最新账户；目录匹配多条时返回 `ambiguous`，需要明确的会话 ID。缺失、超过 180 秒未收到数据或重置时间已过均返回未知，不假设额度已经补满。`received_age` 只是接收时间：定时刷新可能复用 Claude Code 缓存，服务不独立验证余额；切换账户后须等待实际响应产生对应额度再信任读数。没有任何会话上报时会显示 `unknown`。
+
+查看服务：
+
+```bash
+# Linux
+systemctl --user status claude-quota.service
+# macOS
+launchctl print gui/$(id -u)/com.vallierdev.claude-quota
+```
+
+Linux 用户服务退出登录后保持运行需要现有 linger 配置；安装器不会自行修改系统 linger。macOS LaunchAgent 随用户登录启动。
+
+恢复安装器打印的备份（只恢复状态栏相关字段，不整份覆盖后来设置）：
+
+```bash
+python3 service/rollback.py ~/.claude/backups/claude-quota/<备份目录>
+claude plugin uninstall pace-statusline-plus@pace-statusline-plus-local
+```
+
+服务备份和插件配置备份分别位于 `~/.claude/backups/claude-quota` 与 `~/.claude/backups/claude-quota-plugin`，可能含私有设置，不提交 Git。
+
+## 为什么额度或缓存显示 `--`
+
+额度来自 Claude Code 的 stdin `rate_limits` 字段。根据[官方文档](https://code.claude.com/docs/en/statusline)，Pro / Max 和部分网关配置会提供该数据，通常首次 API 响应后才出现；单个窗口也可能缺失。缺少数据时显示占位符，不用旧账户的缓存额度填充。
+
+缓存倒计时读取 `prompt_cache.expires_at`，没有这个字段时不猜测有效期。`last` 只是模型活动计时，不能据此判断缓存仍然有效。新增字段已用 Claude Code 2.1.296 验证；旧版本缺少字段时会降级显示。
+
+## 隐私
+
+运行时脚本不发起网络请求，也不读取登录凭据。它读取 stdin 的会话 JSON 和本地设置；有 session ID 时，最多读取对应会话文件的最后 400 行，只选择模型 usage 时间戳，不输出对话内容。Git 元数据短暂缓存在用户自己的 `$XDG_RUNTIME_DIR/claude-pace` 或 `~/.cache/claude-pace`。
+
+安装备份仅保存在本机 `~/.claude/backups/claude-statusline-plus`，使用受限权限。备份可能含你自己的私有设置，不要上传。公开仓库仅包含代码、文档及模拟数据测试。
+
+## 卸载或恢复
+
+删除 `settings.json` 的 `statusLine` 字段即可关闭；也可以从安装器显示的备份目录中，只恢复原来的 `statusLine` 字段。`previous-statusline.json` 记录了原字段和值。整份恢复旧设置会同时回退后来修改的其他设置，请按需要选择。之后可删除安装的 `claude-statusline-plus.sh` 文件。
+
+## 开发与贡献
 
 ```bash
 bash -n claude-pace.sh
-# Isolate HOME so tests never touch your Claude configuration.
 test_home=$(mktemp -d)
 HOME="$test_home" XDG_RUNTIME_DIR="" bash test.sh
 python3 -m unittest discover -s tests -v
 python3 -m unittest discover -s service -p "test_*.py" -v
 ```
 
-Inherited regression tests additionally use Perl. CI runs the suites on macOS and Linux. The added tests cover quota/cache separation, activity timestamps, missing fields, malformed input, and preservation of unrelated installer settings.
+上游回归测试额外需要 Perl。CI 在 macOS 与 Linux 运行；新增测试覆盖缓存与额度独立显示、模型活动计时、字段缺失、异常输入，以及安装器保留其他配置。
 
-## Credits and license
-
-The quota pace renderer, context handling, Git display and cache protections originate in [Astro-Han/claude-pace](https://github.com/Astro-Han/claude-pace). This fork adds cache/activity indicators, defensive input handling, installer tooling and bilingual docs. See [NOTICE](NOTICE), [LICENSE](LICENSE) and [CHANGELOG](CHANGELOG.md).
+欢迎提交 issue 或 PR。原始额度、上下文、Git 显示来自上游；新增缓存 / 活动指示、安装器与双语文档见 [CHANGELOG](CHANGELOG.md)。保留原作者署名，按 [MIT](LICENSE) 发布。
