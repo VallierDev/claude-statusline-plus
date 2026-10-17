@@ -13,6 +13,10 @@ Opus (200K) high    | my-project (main) 2f +12 -3
 
 Illustrative data; percentages above are not a real account's usage.
 
+## Session context usage (1.3.0)
+
+Quota queries and live hook summaries now include `context=63% remaining=37% capacity=1M`. JSON `context_window` contains status, used_percentage, remaining_percentage and context_window_size (token capacity). Values are session-scoped and reported by Claude Code, never inferred from cumulative input tokens. Missing data returns unknown; receipts older than 180 seconds return stale. Context capacity is separate from subscription quota and the auto-compaction threshold; no automatic compaction or restart is introduced. Rerun the service/plugin/live-hook installers to update; existing sessions use the output at the next tool boundary and can load the command with `/reload-plugins`.
+
 ## Cache countdown and brief keepalive (1.2.0)
 
 Queries now include `cache=2640s`; JSON `prompt_cache` has `expires_at`, `remaining_seconds`, and `status` (warm/expired/unknown/stale). Quota `resets_at` remains separate. At tool boundaries, the opt-in live hook requests a one-sentence progress checkpoint in the next normal response when cache has 1–300 seconds left and quota advice is normal/conserve. It reminds once per reported expiry; stop/unknown quota or invalid cache never triggers keepalive.

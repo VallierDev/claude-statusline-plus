@@ -44,6 +44,37 @@ class QuotaTests(unittest.TestCase):
         capture({'rate_limits':self.limits()},self.state,1000)
         self.assertEqual(query(state=self.state,now=1010)['status'],'unknown')
 
+class ContextTests(unittest.TestCase):
+    def test_context_roundtrip_and_sessions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state=Path(tmp)
+            for sid,used,size in [('a',63,1000000),('b',12.5,200000)]:
+                capture({'session_id':sid,'context_window':{'used_percentage':used,'context_window_size':size}},state,1000)
+            a=query('a',state=state,now=1001)
+            self.assertEqual(a['sessions'][0]['context_window'],{'status':'available','used_percentage':63,'remaining_percentage':37,'context_window_size':1000000})
+            self.assertIn('context=63% remaining=37% capacity=1M',compact(a))
+            self.assertIn('context=12.5% remaining=87.5% capacity=200K',compact(query('b',state=state,now=1001)))
+            # Context alone must not invent known subscription quota.
+            self.assertEqual(a['sessions'][0]['advice'],'unknown')
+            self.assertIn('context=stale',compact(query('a',state=state,now=1200)))
+    def test_missing_invalid_and_boundaries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state=Path(tmp)
+            for used in [None,True,-1,101,'63',float('nan'),float('inf')]:
+                capture({'session_id':'a','context_window':{'used_percentage':used,'context_window_size':True}},state,1000)
+                r=query('a',state=state,now=1001)['sessions'][0]['context_window']
+                self.assertEqual(r['status'],'unknown');self.assertIsNone(r['context_window_size'])
+            for used in (0,100):
+                capture({'session_id':'a','context_window':{'used_percentage':used}},state,1000)
+                self.assertIn(f'context={used}% remaining={100-used}% capacity=unknown',compact(query('a',state=state,now=1001)))
+            capture({'session_id':'a'},state,1000)
+            self.assertIn('context=unknown',compact(query('a',state=state,now=1001)))
+    def test_old_record_compatible(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state=Path(tmp);capture({'session_id':'a'},state,1000)
+            p=next(state.glob('*.json'));record=json.loads(p.read_text());record.pop('context_window');p.write_text(json.dumps(record))
+            self.assertIn('context=unknown',compact(query('a',state=state,now=1001)))
+
 class CacheTests(unittest.TestCase):
     def test_cache_countdown_and_invalid(self):
         with tempfile.TemporaryDirectory() as tmp:

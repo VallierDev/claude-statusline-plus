@@ -13,6 +13,12 @@ Opus (200K) high    | my-project (main) 2f +12 -3
 
 以上是示意数据，不是任何真实账户的额度。
 
+## 当前会话上下文查询（1.3.0）
+
+`/pace-statusline-plus:quota` 和 `~/.local/bin/claude-quota --compact --cwd "$PWD"` 现在同时返回上下文用量，例如 `context=63% remaining=37% capacity=1M`。JSON 的 `context_window` 包含 `status`、`used_percentage`、`remaining_percentage` 和 `context_window_size`（token 容量）。数据按会话隔离，来自 Claude Code 状态栏上报；不根据历史累计输入 token 估算当前上下文。缺失时返回 `context=unknown`，超过 180 秒没有收到数据时返回 `context=stale`。
+
+上下文百分比与 5 小时／7 天订阅额度分开；这里显示原始上下文容量，不等同于自动压缩阈值。live hook 简报也包含这些字段，方便 Claude 提前整理进度；不会据此自动压缩或重启会话。更新后重新运行服务、插件和 live hook 安装器；已有 Claude 会话在下个工具边界采用新输出，插件命令可通过 `/reload-plugins` 加载。
+
 ## 缓存倒计时与简短保活（1.2.0）
 
 额度命令现在同时返回 `cache=2640s`（对应状态栏的 `cache 44m`）。JSON 的 `prompt_cache` 包含 `expires_at`、`remaining_seconds` 和 `status`（`warm` / `expired` / `unknown` / `stale`）。额度重置的绝对时间仍在各窗口的 `resets_at`，与缓存到期时间分开。

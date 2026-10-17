@@ -57,7 +57,14 @@ def capture(payload, state=STATE, now=None):
     cache = payload.get('prompt_cache')
     expiry = cache.get('expires_at') if isinstance(cache, dict) else None
     cache_data = {'expires_at': expiry if number(expiry) and expiry > 0 else None}
-    record = {'prompt_cache': cache_data, 'session_id': sid, 'cwd': cwd if isinstance(cwd, str) else None,
+    context = payload.get('context_window')
+    context = context if isinstance(context, dict) else {}
+    used, size = context.get('used_percentage'), context.get('context_window_size')
+    context_data = {
+        'used_percentage': used if number(used) and 0 <= used <= 100 else None,
+        'context_window_size': size if isinstance(size, int) and not isinstance(size, bool) and size > 0 else None,
+    }
+    record = {'context_window': context_data, 'prompt_cache': cache_data, 'session_id': sid, 'cwd': cwd if isinstance(cwd, str) else None,
               'received_at': time.time() if now is None else now, 'windows': windows}
     atomic(state / (hashlib.sha256(sid.encode()).hexdigest() + '.json'), record)
 
@@ -82,6 +89,15 @@ def view(record, now):
     cache_status = 'stale' if age > TTL else 'unknown' if not number(expiry) else 'warm' if expiry > now else 'expired'
     result['prompt_cache'] = {'status': cache_status, 'expires_at': expiry,
         'remaining_seconds': max(0, math.ceil(expiry-now)) if number(expiry) and age <= TTL else None}
+    context = record.get('context_window') or {}
+    used, size = context.get('used_percentage'), context.get('context_window_size')
+    context_status = 'stale' if age > TTL else 'available' if number(used) else 'unknown'
+    result['context_window'] = {
+        'status': context_status,
+        'used_percentage': used if context_status == 'available' else None,
+        'remaining_percentage': round(100-used, 2) if context_status == 'available' else None,
+        'context_window_size': size,
+    }
     result['advice'] = 'stop' if 'stop' in levels else 'unknown' if 'unknown' in levels else 'conserve' if 'conserve' in levels else 'normal'
     return result
 
@@ -115,6 +131,13 @@ def compact(data):
     for key, label in (('five_hour', '5h'), ('seven_day', '7d')):
         w = r['windows'][key]
         parts.append(f"{label} remaining={w['remaining_percentage']}% reset_in={w['reset_in_seconds']}s" if w['status']=='available' else f"{label}={w['status']}")
+    context = r.get('context_window') or {}
+    if context.get('status') == 'available':
+        size = context.get('context_window_size')
+        capacity = (f'{size//1000000}M' if size % 1000000 == 0 else f'{size//1000}K' if size % 1000 == 0 else str(size)) if size else 'unknown'
+        parts.append(f"context={context['used_percentage']:g}% remaining={context['remaining_percentage']:g}% capacity={capacity}")
+    else:
+        parts.append(f"context={context.get('status', 'unknown')}")
     cache = r.get('prompt_cache') or {}
     parts.append(f"cache={cache['remaining_seconds']}s" if cache.get('status') == 'warm' else f"cache={cache.get('status', 'unknown')}")
     return '; '.join(parts + [f"advice={r['advice']}", f"received_age={r['age_seconds']}s (reported data)"])

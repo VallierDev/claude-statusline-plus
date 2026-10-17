@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0
+
+- Return session-scoped context usage, remaining percentage and capacity in queries and hook summaries.
+- Handle missing, invalid, stale and older records without estimating token use or auto-compacting.
+
 ## 1.2.0
 
 - Return prompt cache expiry and remaining seconds in quota queries.
