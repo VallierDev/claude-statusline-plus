@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from quota import capture, query, compact
+from quota import capture, query, compact, pace_level
 
 class QuotaTests(unittest.TestCase):
     def setUp(self):
@@ -36,6 +36,21 @@ class QuotaTests(unittest.TestCase):
         self.emit('one', self.limits(10)); self.emit('two', self.limits(95))
         self.assertEqual(query(cwd='/work',state=self.state,now=1010)['status'],'ambiguous')
         self.assertEqual(query('two',state=self.state,now=1010)['sessions'][0]['advice'],'stop')
+    def test_advice_weighs_usage_against_time_to_reset(self):
+        # 84% used with 4% of the week left: ahead of pace, keep working normally.
+        self.assertEqual(pace_level('seven_day', 84, 25935)[0], 'normal')
+        # Same usage with 3 days left: burning faster than an even pace.
+        self.assertEqual(pace_level('seven_day', 84, 3 * 86400)[0], 'conserve')
+        self.assertEqual(pace_level('seven_day', 96, 3600)[0], 'normal')
+        self.assertEqual(pace_level('seven_day', 96, 2 * 86400)[0], 'stop')
+        self.assertEqual(pace_level('five_hour', 79, 4 * 3600)[0], 'normal')
+        level, time_left = pace_level('five_hour', 85, 3 * 3600)
+        self.assertEqual((level, time_left), ('conserve', 60.0))
+        self.emit(limits={'five_hour': {'used_percentage': 10, 'resets_at': 1000 + 3600},
+                          'seven_day': {'used_percentage': 84, 'resets_at': 1000 + 25935}})
+        session = query('one', state=self.state, now=1000)['sessions'][0]
+        self.assertEqual(session['advice'], 'normal')
+        self.assertEqual(session['windows']['seven_day']['time_remaining_percentage'], 4.29)
     def test_only_whitelist_persisted(self):
         capture({'session_id':'one','cwd':'/work','api_key':'secret','transcript':'private'},self.state,1000)
         raw=next(self.state.iterdir()).read_text()

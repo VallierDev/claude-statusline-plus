@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0
+
+- Quota advice weighs usage against time to reset: `conserve` (80%+) and `stop` (95%+) apply only when the remaining quota share is smaller than the remaining time share of that window (5h / 7d).
+- Each window in a query returns `time_remaining_percentage` and its own `advice`; hook summaries and the installed CLAUDE.md guidance describe the pace rule.
+
 ## 1.3.0
 
 - Return session-scoped context usage, remaining percentage and capacity in queries and hook summaries.

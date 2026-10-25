@@ -69,6 +69,21 @@ def capture(payload, state=STATE, now=None):
     atomic(state / (hashlib.sha256(sid.encode()).hexdigest() + '.json'), record)
 
 
+WINDOW_SECONDS = {'five_hour': 5 * 3600, 'seven_day': 7 * 86400}
+
+
+def pace_level(key, used, reset_in):
+    """Advice from usage AND time to reset: only conserve/stop when the remaining quota share is
+    smaller than the remaining time share (burning faster than an even pace)."""
+    total = WINDOW_SECONDS.get(key)
+    if not total:
+        return ('stop' if used >= 95 else 'conserve' if used >= 80 else 'normal'), None
+    time_left = min(100.0, max(0.0, reset_in / total * 100))
+    behind_pace = (100 - used) < time_left
+    level = 'stop' if used >= 95 and behind_pace else 'conserve' if used >= 80 and behind_pace else 'normal'
+    return level, round(time_left, 2)
+
+
 def view(record, now):
     age = max(0, now - record['received_at'])
     result = {'session_id': record['session_id'], 'cwd': record.get('cwd'),
@@ -80,10 +95,10 @@ def view(record, now):
         known = age <= TTL and number(used) and number(reset) and reset > now
         status = 'available' if known else ('stale' if age > TTL else 'unknown')
         remaining = round(100 - used, 2) if known else None
-        level = 'stop' if known and used >= 95 else 'conserve' if known and used >= 80 else 'normal' if known else 'unknown'
+        level, time_left = pace_level(key, used, reset - now) if known else ('unknown', None)
         levels.append(level)
         result['windows'][key] = {'status': status, 'used_percentage': used,
-            'remaining_percentage': remaining, 'resets_at': reset,
+            'remaining_percentage': remaining, 'time_remaining_percentage': time_left, 'advice': level, 'resets_at': reset,
             'reset_in_seconds': max(0, round(reset-now)) if number(reset) else None}
     expiry = (record.get('prompt_cache') or {}).get('expires_at')
     cache_status = 'stale' if age > TTL else 'unknown' if not number(expiry) else 'warm' if expiry > now else 'expired'

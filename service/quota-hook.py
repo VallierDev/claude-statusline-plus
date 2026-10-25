@@ -34,7 +34,7 @@ def handle(payload, now=None, state=STATE, reader=fetch):
     record['keepalive_expiry'] = expiry if due else previous.get('keepalive_expiry')
     atomic(path,record)
     if not notify: return None
-    context = 'Quota/cache checkpoint: '+compact(data)+'. >=80% used: conserve; >=95%: safe checkpoint and defer optional work. Unknown is not full quota. No duplicate polling.'
+    context = 'Quota/cache checkpoint: '+compact(data)+'. Advice weighs usage against time to reset: conserve only at >=80% used AND remaining quota share < remaining time share; stop likewise at >=95%. Unknown is not full quota. No duplicate polling.'
     if due:
         context += (' Cache expires within 5 minutes. At the next normal response, give one very short progress checkpoint (at most one sentence: completed/current/next), then continue under quota rules. '
                     'Reuse this same session; no new agent, repeated keepalive, unrelated tool, or extra model timer. An actual cache-hit model request may refresh cache; local queries do not. Do not interrupt a running tool.')
