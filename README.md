@@ -29,6 +29,10 @@ Opus (200K) high    | my-project (main) 2f +12 -3
 
 更新时在仓库执行 `git pull`，然后依次运行 `python3 service/install.py`、`python3 service/install-plugin.py`、`python3 service/install-live-hook.py`。仅重载本地读数服务，不重启 Claude 会话；现有会话在下个工具边界采用新版 hook，插件命令可用 `/reload-plugins` 加载。
 
+## 可选：新会话自动建立保活定时任务（默认关闭）
+
+`python3 service/install-live-hook.py --keepalive` 会额外注册 SessionStart hook，并写入 `~/.local/share/claude-quota/keepalive.json`（`enabled`、`cron`，默认 `3,53 * * * *`）。每个新会话开始时，hook 只提示 Claude 用 Claude Code 内置的 CronList/CronCreate 创建一个只回复“ok”的定时任务，已有则不重复建。hook 和服务本身不联系模型、不碰令牌、不模拟输入。内置定时任务只在会话空闲时触发、7 天后过期；每次保活仍会消耗少量 token，不保证续期成功。关闭：把 `enabled` 改为 `false`。
+
 ## 能看到什么
 
 - 模型、上下文容量与推理强度。

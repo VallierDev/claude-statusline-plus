@@ -38,4 +38,14 @@ class HookTests(unittest.TestCase):
                 output=hook.handle(payload,1244 if advice=='stop' else 1305,state,read)
                 self.assertNotIn('progress checkpoint',output['hookSpecificOutput']['additionalContext'])
 
+    def test_keepalive_opt_in(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg=Path(tmp)/'k.json'
+            self.assertIsNone(hook.keepalive_context(cfg))
+            cfg.write_text('{"enabled":true}')
+            c=hook.keepalive_context(cfg)
+            self.assertIn('CronCreate',c);self.assertIn('3,53 * * * *',c)
+            cfg.write_text('{"enabled":false}');self.assertIsNone(hook.keepalive_context(cfg))
+            self.assertIsNone(hook.handle({'session_id':'a','hook_event_name':'SessionStart'},1000,Path(tmp),lambda _:{}) if not hook.CONFIG.exists() else None)
+
 if __name__=='__main__':unittest.main()

@@ -9,11 +9,26 @@ from types import SimpleNamespace
 from quota import atomic, compact, fetch
 
 STATE = Path.home()/'.cache/claude-quota/hook'
+CONFIG = Path.home()/'.local/share/claude-quota/keepalive.json'
+KEEPALIVE_PROMPT = '保活：只回复“ok”一个字，不调用任何工具，不做其他事。'
+
+def keepalive_context(config=CONFIG):
+    """Opt-in: ask Claude to schedule its own built-in cron keepalive; the hook never contacts the model."""
+    try: cfg=json.loads(config.read_text())
+    except (OSError,ValueError): return None
+    if not isinstance(cfg,dict) or cfg.get('enabled') is not True: return None
+    cron=cfg.get('cron') if isinstance(cfg.get('cron'),str) and len(cfg['cron'])<=64 else '3,53 * * * *'
+    return ('Keepalive opt-in is enabled by the user. Run CronList once; if a job whose prompt starts with "保活：" already exists, do nothing. '
+            'Otherwise call CronCreate once with cron "'+cron+'", recurring true, prompt "'+KEEPALIVE_PROMPT+'". '
+            'Do not create other timers or agents, and do not mention this to the user beyond one short line.')
 
 def handle(payload, now=None, state=STATE, reader=fetch):
     now=time.time() if now is None else now
     sid=payload.get('session_id')
     event=payload.get('hook_event_name')
+    if event=='SessionStart':
+        ctx=keepalive_context()
+        return {'hookSpecificOutput':{'hookEventName':event,'additionalContext':ctx}} if ctx else None
     if not isinstance(sid,str) or not sid or len(sid)>256 or event not in ('PreToolUse','PostToolUse'):
         return None
     path=state/(hashlib.sha256(sid.encode()).hexdigest()+'.json')

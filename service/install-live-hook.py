@@ -20,7 +20,11 @@ root.mkdir(mode=0o700,parents=True,exist_ok=True)
 source=Path(__file__).parent/'quota-hook.py'
 shutil.copy2(source,root/'quota-hook.py')
 command=shlex.quote(sys.executable)+' '+shlex.quote(str(root/'quota-hook.py'))
-for event in ('PreToolUse','PostToolUse'):
+events=('PreToolUse','PostToolUse')
+if '--keepalive' in sys.argv:  # opt-in: sessions schedule their own built-in cron keepalive
+    events+=('SessionStart',)
+    atomic(root/'keepalive.json',{'enabled':True,'cron':'3,53 * * * *'})
+for event in events:
     groups=hooks.setdefault(event,[])
     if not isinstance(groups,list): raise SystemExit('Unsupported event configuration; no settings changed.')
     if not any(any(h.get('command')==command for h in g.get('hooks',[])) for g in groups):
