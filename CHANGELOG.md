@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.0
+
+- Opt-in SessionStart hook (`install-live-hook.py --keepalive`): each new session is asked to schedule Claude Code's built-in cron keepalive (reply "ok" only). Disabled unless `keepalive.json` has `enabled: true`; the hook never contacts the model.
+
 ## 1.4.0
 
 - Quota advice weighs usage against time to reset: `conserve` (80%+) and `stop` (95%+) apply only when the remaining quota share is smaller than the remaining time share of that window (5h / 7d).
